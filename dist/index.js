@@ -55,66 +55,89 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7484));
 const lcov_parse_1 = __importDefault(__nccwpck_require__(6638));
 const fs = __importStar(__nccwpck_require__(1943));
+const fsAppend = __importStar(__nccwpck_require__(1943)); // 用于文件追加
+// ==================== 工具函数 ====================
+function appendToFile(content, envVarName) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const filePath = process.env[envVarName];
+        if (!filePath) {
+            core.warning(`无法写入环境文件：环境变量 ${envVarName} 未设置`);
+            return false;
+        }
+        try {
+            yield fsAppend.appendFile(filePath, content, 'utf-8');
+            return true;
+        }
+        catch (error) {
+            core.warning(`写入文件 ${filePath} 失败：${error.message}`);
+            return false;
+        }
+    });
+}
+function addToJobSummary(markdown) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return appendToFile(markdown, 'GITHUB_STEP_SUMMARY');
+    });
+}
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            // 1. Get input parameters
+            // 1. 获取输入参数
             const lcovPath = core.getInput('lcov-path', { required: true });
             const threshold = parseInt(core.getInput('threshold', { required: true }), 10);
-            // 2. Verify file existence
+            // 2. 验证 LCOV 文件存在
             try {
                 yield fs.access(lcovPath);
             }
             catch (_a) {
-                core.error(`LCOV file not found: ${lcovPath}`);
-                core.setFailed('LCOV file does not exist');
+                core.error(`LCOV 文件未找到：${lcovPath}`);
+                core.setFailed('LCOV 文件不存在');
                 return;
             }
-            // 3. Parse LCOV file
-            const lcovContent = yield fs.readFile(lcovPath, 'utf8');
+            // 3. 解析 LCOV 文件
+            const lcovContent = yield fs.readFile(lcovPath, 'utf-8');
             const coverageData = yield new Promise((resolve, reject) => {
-                (0, lcov_parse_1.default)(lcovContent, (err, data) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-                    resolve(data);
-                });
+                (0, lcov_parse_1.default)(lcovContent, (err, data) => err ? reject(err) : resolve(data));
             });
-            if (!coverageData) {
-                throw new Error('Failed to parse LCOV file');
-            }
-            // 4. Generate coverage report
-            const coverageReport = [];
-            coverageData.forEach((file) => {
-                if (file.lines && file.lines.found > 0) {
-                    const lineCoverage = (file.lines.hit / file.lines.found) * 100;
-                    coverageReport.push({
-                        file: file.title,
-                        lines: Math.round(lineCoverage)
-                    });
-                }
-            });
-            // 5. Output coverage report
-            core.info('File coverage report:');
+            if (!coverageData)
+                throw new Error('LCOV 文件解析失败');
+            // 4. 生成覆盖率报告
+            const coverageReport = coverageData
+                .filter(file => { var _a; return ((_a = file.lines) === null || _a === void 0 ? void 0 : _a.found) && file.lines.found > 0; })
+                .map(file => ({
+                file: file.file,
+                percentage: (file.lines.hit / file.lines.found) * 100
+            }));
+            // 5. 计算整体覆盖率
+            const overallCoverage = coverageReport.reduce((sum, item) => sum + item.percentage, 0) / coverageReport.length;
+            // 6. 生成 Markdown 内容并写入 Job Summary
+            const markdown = `
+## 📊 代码覆盖率报告
+
+🔍 阈值：${threshold}%
+
+| 文件路径 | 覆盖率 |
+|---------|-------|
+${coverageReport.map(item => `| ${item.file} | ${item.percentage.toFixed(2)}% |`).join('\n')}
+
+### 整体覆盖率
+${overallCoverage >= threshold ? '✅' : '⚠️'} ${overallCoverage.toFixed(2)}%
+        `;
+            const writeSuccess = yield addToJobSummary(markdown);
+            if (!writeSuccess)
+                core.warning('覆盖率摘要写入失败');
+            // 7. 原有日志输出和阈值检查（保留）
+            core.info('文件覆盖率详情：');
             coverageReport.forEach((item, index) => {
-                core.info(`${index + 1}. ${item.file} - ${item.lines}%`);
+                core.info(`${index + 1}. ${item.file} - ${item.percentage.toFixed(2)}%`);
             });
-            // 6. Check coverage threshold
-            const overallCoverage = coverageReport.reduce((acc, curr) => acc + curr.lines, 0) / coverageReport.length;
             if (overallCoverage < threshold) {
-                core.error(`Overall coverage (${overallCoverage.toFixed(2)}%) is below the threshold of ${threshold}%`);
-                core.setFailed('Coverage did not meet the standard');
+                core.setFailed(`整体覆盖率 ${overallCoverage.toFixed(2)}% 低于阈值 ${threshold}%`);
             }
-            else {
-                core.info(`Overall coverage meets the standard: ${overallCoverage.toFixed(2)}%`);
-            }
-            // 7. Output as GitHub Actions recognizable variable (optional)
-            core.setOutput('coverage-report', JSON.stringify(coverageReport));
         }
         catch (error) {
-            core.error(`Execution failed: ${error.message}`);
-            core.setFailed('Action execution failed');
+            core.error(`执行失败：${error.message}`);
+            core.setFailed('Action 执行失败');
         }
     });
 }
