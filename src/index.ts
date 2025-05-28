@@ -43,7 +43,7 @@ async function run(): Promise<void> {
             if (file.lines && file.lines.found > 0) {
                 const lineCoverage: number = (file.lines.hit / file.lines.found) * 100;
                 coverageReport.push({
-                    file: file.title,
+                    file: file.file,
                     lines: Math.round(lineCoverage)
                 });
             }
