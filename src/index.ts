@@ -1,8 +1,5 @@
-// @ts-ignore
 import * as core from '@actions/core';
-// @ts-ignore
-import { parse } from "lcov-parse";
-// @ts-ignore
+import parse from "lcov-parse";
 import * as fs from 'fs/promises';
 
 async function run(): Promise<void> {
@@ -10,6 +7,9 @@ async function run(): Promise<void> {
         // 1. Get input parameters
         const lcovPath: string = core.getInput('lcov-path', { required: true });
         const threshold: number = parseInt(core.getInput('threshold', { required: true }), 10);
+
+        // const lcovPath: string = 'reports/coverage/lcov.info';
+        // const threshold: number = 10;
 
         // 2. Verify file existence
         try {
@@ -22,16 +22,28 @@ async function run(): Promise<void> {
 
         // 3. Parse LCOV file
         const lcovContent: string = await fs.readFile(lcovPath, 'utf8');
-        const coverageData: any[] = await parse(lcovContent);
+        const coverageData = await new Promise<parse.LcovFile[] | undefined>((resolve, reject) => {
+            parse(lcovContent, (err, data) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                resolve(data);
+            })
+        });
+
+        if(!coverageData) {
+            throw new Error('Failed to parse LCOV file');
+        }
 
         // 4. Generate coverage report
         const coverageReport: { file: string; lines: number }[] = [];
         coverageData.forEach((file) => {
-            if (file.lines && file.lines.length > 0) {
-                const coveredLines: number = file.lines.filter((line: { hits: number }) => line.hits > 0).length;
-                const lineCoverage: number = (coveredLines / file.lines.length) * 100;
+            if (file.lines && file.lines.found > 0) {
+                const lineCoverage: number = (file.lines.hit / file.lines.found) * 100;
                 coverageReport.push({
-                    file: file.name,
+                    file: file.title,
                     lines: Math.round(lineCoverage)
                 });
             }
