@@ -1,13 +1,15 @@
-name: 'Frontend Unit Test Report'
-description: 'Publishes the Unit Test report as a comment in the Pull Request'
+name: "LCOV Coverage Analyzer"
+description: "Analyze LCOV coverage report and generate file list"
 inputs:
-  who-to-greet:  # id of input
-    description: 'Who to greet'
+  lcov-path:
+    description: "LCOV 文件路径（必填）"
     required: true
-    default: 'World'
+  threshold:
+    description: "覆盖率阈值（必填，百分比）"
+    required: true
 outputs:
-  time: # id of output
-    description: 'The time we greeted you'
+  coverage-report:
+    description: "覆盖率列表 JSON 数据"
 runs:
-  using: 'node20'
-  main: 'dist/index.js'
+  using: "node20"
+  main: "dist/index.js"
